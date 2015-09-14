@@ -1,0 +1,17 @@
+PyQt5 Bindings for QTermWidget
+
+By Harun Gültekin <hrngultekin@gmail.com>,
+   
+PyQt5 QTermWidget Bindings License: GPL3
+
+INSTALL:
+1. Install QTermWidget from http://qtermwidget.sourceforge.net/.
+2. Install python-qt5-base and python-qt5-devel if not yet installed.
+3. Configure, compile and install bindings. Execute in terminal in the qtermwidget bindings folder:
+
+$ python config.py
+$ make
+$ sudo make install
+
+4. You can run ./test.py to test the installed module.
+

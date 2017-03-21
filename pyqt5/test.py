@@ -19,14 +19,16 @@
 # You should have received a copy of the GNU General Public License
 # along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-import sys
-from PyQt5 import Qt
+import sys, signal
+from PyQt5 import QtCore,QtWidgets
+
 import QTermWidget
 
-a = Qt.QApplication(sys.argv)
+signal.signal(signal.SIGINT, signal.SIG_DFL)
+a = QtWidgets.QApplication(sys.argv)
+
 w = QTermWidget.QTermWidget()
-w.sendText("\n")
-
-
+w.finished.connect(a.quit)
 w.show()
+
 a.exec_()

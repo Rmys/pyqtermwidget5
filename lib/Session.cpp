@@ -26,7 +26,6 @@
 #include "Session.h"
 
 // Standard
-#include <assert.h>
 #include <stdlib.h>
 
 // Qt
@@ -49,7 +48,7 @@ using namespace Konsole;
 
 int Session::lastSessionId = 0;
 
-Session::Session(QObject* parent) : 
+Session::Session(QObject* parent) :
     QObject(parent),
         _shellProcess(0)
         , _emulation(0)
@@ -59,6 +58,7 @@ Session::Session(QObject* parent) :
         , _autoClose(true)
         , _wantedClose(false)
         , _silenceSeconds(10)
+        , _isTitleChanged(false)
         , _addToUtmp(false)  // disabled by default because of a bug encountered on certain systems
         // which caused Konsole to hang when closing a tab and then opening a new
         // one.  A 'QProcess destroyed while still running' warning was being
@@ -79,6 +79,7 @@ Session::Session(QObject* parent) :
 
     //create teletype for I/O with shell process
     _shellProcess = new Pty();
+    ptySlaveFd = _shellProcess->pty()->slaveFd();
 
     //create emulation backend
     _emulation = new Vt102Emulation();
@@ -93,9 +94,11 @@ Session::Session(QObject* parent) :
              this, SIGNAL( changeTabTextColorRequest( int ) ) );
     connect( _emulation, SIGNAL(profileChangeCommandReceived(const QString &)),
              this, SIGNAL( profileChangeCommandReceived(const QString &)) );
-    // TODO
-    // connect( _emulation,SIGNAL(imageSizeChanged(int,int)) , this ,
-    //        SLOT(onEmulationSizeChange(int,int)) );
+
+    connect(_emulation, SIGNAL(imageResizeRequest(QSize)),
+            this, SLOT(onEmulationSizeChange(QSize)));
+    connect(_emulation, SIGNAL(imageSizeChanged(int, int)),
+            this, SLOT(onViewSizeChange(int, int)));
 
     //connect teletype to emulation backend
     _shellProcess->setUtf8Mode(_emulation->utf8());
@@ -118,31 +121,11 @@ Session::Session(QObject* parent) :
 
 WId Session::windowId() const
 {
-    // Returns a window ID for this session which is used
-    // to set the WINDOWID environment variable in the shell
-    // process.
-    //
-    // Sessions can have multiple views or no views, which means
-    // that a single ID is not always going to be accurate.
-    //
-    // If there are no views, the window ID is just 0.  If
-    // there are multiple views, then the window ID for the
-    // top-level window which contains the first view is
-    // returned
-
-    if ( _views.count() == 0 ) {
-        return 0;
-    } else {
-        QWidget * window = _views.first();
-
-        Q_ASSERT( window );
-
-        while ( window->parentWidget() != 0 ) {
-            window = window->parentWidget();
-        }
-
-        return window->winId();
-    }
+    // On Qt5, requesting window IDs breaks QQuickWidget and the likes,
+    // for example, see the following bug reports:
+    // https://bugreports.qt.io/browse/QTBUG-40765
+    // https://codereview.qt-project.org/#/c/94880/
+    return 0;
 }
 
 void Session::setDarkBackground(bool darkBackground)
@@ -203,6 +186,11 @@ void Session::addView(TerminalDisplay * widget)
 
         widget->setUsesMouse( _emulation->programUsesMouse() );
 
+        connect( _emulation , SIGNAL(programBracketedPasteModeChanged(bool)) ,
+                 widget , SLOT(setBracketedPasteMode(bool)) );
+
+        widget->setBracketedPasteMode(_emulation->programBracketedPasteMode());
+
         widget->setScreenWindow(_emulation->createWindow());
     }
 
@@ -253,24 +241,8 @@ void Session::removeView(TerminalDisplay * widget)
 
 void Session::run()
 {
-    //check that everything is in place to run the session
-    if (_program.isEmpty()) {
-        qDebug() << "Session::run() - program to run not set.";
-    }
-    else {
-        qDebug() << "Session::run() - program:" << _program;
-    }
-
-    if (_arguments.isEmpty()) {
-        qDebug() << "Session::run() - no command line arguments specified.";
-    }
-    else {
-        qDebug() << "Session::run() - arguments:" << _arguments;
-    }
-
     // Upon a KPty error, there is no description on what that error was...
     // Check to see if the given program is executable.
-
 
     /* ok iam not exactly sure where _program comes from - however it was set to /bin/bash on my system
      * Thats bad for BSD as its /usr/local/bin/bash there - its also bad for arch as its /usr/bin/bash there too!
@@ -337,7 +309,20 @@ void Session::run()
     }
 
     _shellProcess->setWriteable(false);  // We are reachable via kwrited.
-    qDebug() << "started!";
+    emit started();
+}
+
+void Session::runEmptyPTY()
+{
+    _shellProcess->setFlowControlEnabled(_flowControl);
+    _shellProcess->setErase(_emulation->eraseChar());
+    _shellProcess->setWriteable(false);
+
+    // disconnet send data from emulator to internal terminal process
+    disconnect( _emulation,SIGNAL(sendData(const char *,int)),
+                _shellProcess, SLOT(sendData(const char *,int)) );
+
+    _shellProcess->setEmptyPTYProperties();
     emit started();
 }
 
@@ -348,6 +333,7 @@ void Session::setUserTitle( int what, const QString & caption )
 
     // (btw: what=0 changes _userTitle and icon, what=1 only icon, what=2 only _nameTitle
     if ((what == 0) || (what == 2)) {
+        _isTitleChanged = true;
         if ( _userTitle != caption ) {
             _userTitle = caption;
             modified = true;
@@ -355,6 +341,7 @@ void Session::setUserTitle( int what, const QString & caption )
     }
 
     if ((what == 0) || (what == 1)) {
+        _isTitleChanged = true;
         if ( _iconText != caption ) {
             _iconText = caption;
             modified = true;
@@ -363,7 +350,7 @@ void Session::setUserTitle( int what, const QString & caption )
 
     if (what == 11) {
         QString colorString = caption.section(';',0,0);
-        qDebug() << __FILE__ << __LINE__ << ": setting background colour to " << colorString;
+        //qDebug() << __FILE__ << __LINE__ << ": setting background colour to " << colorString;
         QColor backColor = QColor(colorString);
         if (backColor.isValid()) { // change color via \033]11;Color\007
             if (backColor != _modifiedBackground) {
@@ -380,6 +367,7 @@ void Session::setUserTitle( int what, const QString & caption )
     }
 
     if (what == 30) {
+        _isTitleChanged = true;
         if ( _nameTitle != caption ) {
             setTitle(Session::NameRole,caption);
             return;
@@ -394,6 +382,7 @@ void Session::setUserTitle( int what, const QString & caption )
 
     // change icon via \033]32;Icon\007
     if (what == 32) {
+        _isTitleChanged = true;
         if ( _iconName != caption ) {
             _iconName = caption;
 
@@ -445,9 +434,7 @@ void Session::monitorTimerDone()
 
     //FIXME: Make message text for this notification and the activity notification more descriptive.
     if (_monitorSilence) {
-//    KNotification::event("Silence", ("Silence in session '%1'", _nameTitle), QPixmap(),
-//                    QApplication::activeWindow(),
-//                    KNotification::CloseWhenWidgetActivated);
+        emit silence();
         emit stateChanged(NOTIFYSILENCE);
     } else {
         emit stateChanged(NOTIFYNORMAL);
@@ -471,10 +458,8 @@ void Session::activityStateSet(int state)
         if ( _monitorActivity ) {
             //FIXME:  See comments in Session::monitorTimerDone()
             if (!_notifiedActivity) {
-//        KNotification::event("Activity", ("Activity in session '%1'", _nameTitle), QPixmap(),
-//                        QApplication::activeWindow(),
-//        KNotification::CloseWhenWidgetActivated);
                 _notifiedActivity=true;
+                emit activity();
             }
         }
     }
@@ -493,9 +478,9 @@ void Session::onViewSizeChange(int /*height*/, int /*width*/)
 {
     updateTerminalSize();
 }
-void Session::onEmulationSizeChange(int lines , int columns)
+void Session::onEmulationSizeChange(QSize size)
 {
-    setSize( QSize(lines,columns) );
+    setSize(size);
 }
 
 void Session::updateTerminalSize()
@@ -699,6 +684,11 @@ QString Session::iconName() const
 QString Session::iconText() const
 {
     return _iconText;
+}
+
+bool Session::isTitleChanged() const
+{
+    return _isTitleChanged;
 }
 
 void Session::setHistoryType(const HistoryType & hType)
@@ -931,6 +921,10 @@ int Session::foregroundProcessId() const
 int Session::processId() const
 {
     return _shellProcess->pid();
+}
+int Session::getPtySlaveFd() const
+{
+    return ptySlaveFd;
 }
 
 SessionGroup::SessionGroup()

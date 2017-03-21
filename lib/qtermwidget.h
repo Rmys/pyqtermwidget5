@@ -20,24 +20,49 @@
 #ifndef _Q_TERM_WIDGET
 #define _Q_TERM_WIDGET
 
-#include <QtWidgets/QWidget>
+#include <QTranslator>
+#include <QWidget>
+#include "Filter.h"
+#include "qtermwidget_export.h"
 
 class QVBoxLayout;
 struct TermWidgetImpl;
 class SearchBar;
 class QUrl;
 
-class QTermWidget : public QWidget {
+class QTERMWIDGET_EXPORT QTermWidget : public QWidget {
     Q_OBJECT
 public:
 
+    /**
+     * This enum describes the location where the scroll bar is positioned in the display widget.
+     */
     enum ScrollBarPosition {
         /** Do not show the scroll bar. */
-        NoScrollBar=0,
+        NoScrollBar = 0,
         /** Show the scroll bar on the left side of the display. */
-        ScrollBarLeft=1,
+        ScrollBarLeft = 1,
         /** Show the scroll bar on the right side of the display. */
-        ScrollBarRight=2
+        ScrollBarRight = 2
+    };
+
+    /**
+     * This enum describes the available shapes for the keyboard cursor.
+     * See setKeyboardCursorShape()
+     */
+    enum KeyboardCursorShape {
+        /** A rectangular block which covers the entire area of the cursor character. */
+        BlockCursor = 0,
+        /**
+         * A single flat line which occupies the space at the bottom of the cursor
+         * character's area.
+         */
+        UnderlineCursor = 1,
+        /**
+         * An cursor shaped like the capital letter 'I', similar to the IBeam
+         * cursor used in Qt/KDE text editors.
+         */
+        IBeamCursor = 2
     };
 
     //Creation of widget
@@ -54,6 +79,13 @@ public:
     //start shell program if it was not started in constructor
     void startShellProgram();
 
+    /**
+     * Start terminal teletype as is
+     * and redirect data for external recipient.
+     * It can be used for display and control a remote terminal.
+     */
+    void startTerminalTeletype();
+
     int getShellPID();
 
     void changeDir(const QString & dir);
@@ -62,11 +94,11 @@ public:
 
     //  Terminal font
     // Default is application font with family Monospace, size 10
-    // USE ONLY FIXED-PITCH FONT!
-    // otherwise symbols' position could be incorrect
+    // Beware of a performance penalty and display/alignment issues when using a proportional font.
     void setTerminalFont(const QFont & font);
     QFont getTerminalFont();
     void setTerminalOpacity(qreal level);
+    void setTerminalBackgroundImage(QString backgroundImage);
 
     //environment
     void setEnvironment(const QStringList & environment);
@@ -91,9 +123,7 @@ public:
      */
     void setColorScheme(const QString & name);
     static QStringList availableColorSchemes();
-
-    //set size
-    void setSize(int h, int v);
+    static void addCustomColorSchemeDir(const QString& custom_dir);
 
     // History size for scrolling
     void setHistorySize(int lines); //infinite if lines < 0
@@ -125,18 +155,19 @@ public:
 
     //! Return current key bindings
     QString keyBindings();
-    
+
     void setMotionAfterPasting(int);
 
     /** Return the number of lines in the history buffer. */
     int historyLinesCount();
 
     int screenColumnsCount();
+    int screenLinesCount();
 
     void setSelectionStart(int row, int column);
     void setSelectionEnd(int row, int column);
     void getSelectionStart(int& row, int& column);
-    void setSelectionEnd(int& row, int& column);
+    void getSelectionEnd(int& row, int& column);
 
     /**
      * Returns the currently selected text.
@@ -144,6 +175,56 @@ public:
      * be inserted into the returned text at the end of each terminal line.
      */
     QString selectedText(bool preserveLineBreaks = true);
+
+    void setMonitorActivity(bool);
+    void setMonitorSilence(bool);
+    void setSilenceTimeout(int seconds);
+
+    /** Returns the available hotspot for the given point \em pos.
+     *
+     * This method may return a nullptr if no hotspot is available.
+     *
+     * @param[in] pos The point of interest in the QTermWidget coordinates.
+     * @return Hotspot for the given position, or nullptr if no hotspot.
+     */
+    Filter::HotSpot* getHotSpotAt(const QPoint& pos) const;
+
+    /** Returns the available hotspots for the given row and column.
+     *
+     * @return Hotspot for the given position, or nullptr if no hotspot.
+     */
+    Filter::HotSpot* getHotSpotAt(int row, int column) const;
+
+    /*
+     * Proxy for TerminalDisplay::filterActions
+     * */
+    QList<QAction*> filterActions(const QPoint& position);
+
+    /**
+     * Returns a pty slave file descriptor.
+     * This can be used for display and control
+     * a remote terminal.
+     */
+    int getPtySlaveFd() const;
+
+    /**
+     * Sets the shape of the keyboard cursor.  This is the cursor drawn
+     * at the position in the terminal where keyboard input will appear.
+     */
+    void setKeyboardCursorShape(KeyboardCursorShape shape);
+
+
+    /**
+     * Automatically close the terminal session after the shell process exits or
+     * keep it running.
+     */
+    void setAutoClose(bool);
+
+    QString title() const;
+    QString icon() const;
+
+    /** True if the title() or icon() was (ever) changed by the session. */
+    bool isTitleChanged() const;
 
 signals:
     void finished();
@@ -154,7 +235,27 @@ signals:
 
     void termKeyPressed(QKeyEvent *);
 
-    void urlActivated(const QUrl&);
+    void urlActivated(const QUrl&, bool fromContextMenu);
+
+    void bell(const QString& message);
+
+    void activity();
+    void silence();
+
+    /**
+     * Emitted when emulator send data to the terminal process
+     * (redirected for external recipient). It can be used for
+     * control and display the remote terminal.
+     */
+    void sendData(const char *,int);
+
+    void titleChanged();
+
+    /**
+     * Signals that we received new data from the process running in the
+     * terminal emulator
+     */
+    void receivedData(const QString &text);
 
 public slots:
     // Copy selection to clipboard
@@ -163,13 +264,16 @@ public slots:
     // Paste clipboard to terminal
     void pasteClipboard();
 
-    // Paste selection to terminal 
+    // Paste selection to terminal
     void pasteSelection();
 
     // Set zoom
     void zoomIn();
     void zoomOut();
-    
+
+    // Set size
+    void setSize(const QSize &);
+
     /*! Set named key binding for given widget
      */
     void setKeyBindings(const QString & kb);
@@ -201,6 +305,7 @@ private:
     TermWidgetImpl * m_impl;
     SearchBar* m_searchBar;
     QVBoxLayout *m_layout;
+    QTranslator *m_translator;
 };
 
 

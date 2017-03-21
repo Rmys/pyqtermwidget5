@@ -145,7 +145,7 @@ void QTermWidget::findPrevious()
 void QTermWidget::search(bool forwards, bool next)
 {
     int startColumn, startLine;
-    
+
     if (next) // search from just after current selection
     {
         m_impl->m_terminalDisplay->screenWindow()->screen()->getSelectionEnd(startColumn, startLine);
@@ -155,15 +155,15 @@ void QTermWidget::search(bool forwards, bool next)
     {
         m_impl->m_terminalDisplay->screenWindow()->screen()->getSelectionStart(startColumn, startLine);
     }
-   
+
     qDebug() << "current selection starts at: " << startColumn << startLine;
-    qDebug() << "current cursor position: " << m_impl->m_terminalDisplay->screenWindow()->cursorPosition(); 
+    qDebug() << "current cursor position: " << m_impl->m_terminalDisplay->screenWindow()->cursorPosition();
 
     QRegExp regExp(m_searchBar->searchText());
     regExp.setPatternSyntax(m_searchBar->useRegularExpression() ? QRegExp::RegExp : QRegExp::FixedString);
     regExp.setCaseSensitivity(m_searchBar->matchCase() ? Qt::CaseSensitive : Qt::CaseInsensitive);
 
-    HistorySearch *historySearch = 
+    HistorySearch *historySearch =
             new HistorySearch(m_impl->m_session->emulation(), regExp, forwards, startColumn, startLine, this);
     connect(historySearch, SIGNAL(matchFound(int, int, int, int)), this, SLOT(matchFound(int, int, int, int)));
     connect(historySearch, SIGNAL(noMatchFound()), this, SLOT(noMatchFound()));
@@ -183,7 +183,7 @@ void QTermWidget::matchFound(int startColumn, int startLine, int endColumn, int 
     sw->setSelectionEnd(endColumn, endLine - sw->currentLine());
 }
 
-void QTermWidget::noMatchFound() 
+void QTermWidget::noMatchFound()
 {
         m_impl->m_terminalDisplay->screenWindow()->clearSelection();
 }
@@ -228,19 +228,60 @@ void QTermWidget::startShellProgram()
     m_impl->m_session->run();
 }
 
+void QTermWidget::startTerminalTeletype()
+{
+    if ( m_impl->m_session->isRunning() ) {
+        return;
+    }
+
+    m_impl->m_session->runEmptyPTY();
+    // redirect data from TTY to external recipient
+    connect( m_impl->m_session->emulation(), SIGNAL(sendData(const char *,int)),
+             this, SIGNAL(sendData(const char *,int)) );
+}
+
 void QTermWidget::init(int startnow)
 {
     m_layout = new QVBoxLayout();
     m_layout->setMargin(0);
     setLayout(m_layout);
-    
+
+    // translations
+    // First check $XDG_DATA_DIRS. This follows the implementation in libqtxdg
+    QString d = QFile::decodeName(qgetenv("XDG_DATA_DIRS"));
+    QStringList dirs = d.split(QLatin1Char(':'), QString::SkipEmptyParts);
+    if (dirs.isEmpty()) {
+        dirs.append(QString::fromLatin1("/usr/local/share"));
+        dirs.append(QString::fromLatin1("/usr/share"));
+    }
+    dirs.append(QFile::decodeName(TRANSLATIONS_DIR));
+
+    m_translator = new QTranslator(this);
+
+    for (const QString& dir : dirs) {
+        qDebug() << "Trying to load translation file from dir" << dir;
+        if (m_translator->load(QLocale::system(), "qtermwidget", "_", dir)) {
+            qApp->installTranslator(m_translator);
+            qDebug() << "Translations found in" << dir;
+            break;
+        }
+    }
+
     m_impl = new TermWidgetImpl(this);
     m_impl->m_terminalDisplay->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::MinimumExpanding);
     m_layout->addWidget(m_impl->m_terminalDisplay);
 
+    connect(m_impl->m_session, SIGNAL(bellRequest(QString)), m_impl->m_terminalDisplay, SLOT(bell(QString)));
+    connect(m_impl->m_terminalDisplay, SIGNAL(notifyBell(QString)), this, SIGNAL(bell(QString)));
+
+    connect(m_impl->m_session, SIGNAL(activity()), this, SIGNAL(activity()));
+    connect(m_impl->m_session, SIGNAL(silence()), this, SIGNAL(silence()));
+
+    connect(m_impl->m_session, &Session::receivedData, this, &QTermWidget::receivedData);
+
     // That's OK, FilterChain's dtor takes care of UrlFilter.
     UrlFilter *urlFilter = new UrlFilter();
-    connect(urlFilter, SIGNAL(activated(QUrl)), this, SIGNAL(urlActivated(QUrl)));
+    connect(urlFilter, &UrlFilter::activated, this, &QTermWidget::urlActivated);
     m_impl->m_terminalDisplay->filterChain()->addFilter(urlFilter);
 
     m_searchBar = new SearchBar(this);
@@ -278,10 +319,13 @@ void QTermWidget::init(int startnow)
     m_searchBar->setFont(font);
 
     setScrollBarPosition(NoScrollBar);
+    setKeyboardCursorShape(BlockCursor);
 
     m_impl->m_session->addView(m_impl->m_terminalDisplay);
 
+    connect(m_impl->m_session, SIGNAL(resizeRequest(QSize)), this, SLOT(setSize(QSize)));
     connect(m_impl->m_session, SIGNAL(finished()), this, SLOT(sessionFinished()));
+    connect(m_impl->m_session, &Session::titleChanged, this, &QTermWidget::titleChanged);
 }
 
 
@@ -314,6 +358,14 @@ void QTermWidget::setTerminalOpacity(qreal level)
     m_impl->m_terminalDisplay->setOpacity(level);
 }
 
+void QTermWidget::setTerminalBackgroundImage(QString backgroundImage)
+{
+    if (!m_impl->m_terminalDisplay)
+        return;
+
+    m_impl->m_terminalDisplay->setBackgroundImage(backgroundImage);
+}
+
 void QTermWidget::setShellProgram(const QString &progname)
 {
     if (!m_impl->m_session)
@@ -341,7 +393,7 @@ QString QTermWidget::workingDirectory()
     if (!d.exists())
     {
         qDebug() << "Cannot find" << d.dirName();
-        goto fallback; 
+        goto fallback;
     }
     return d.canonicalPath();
 #endif
@@ -413,11 +465,16 @@ QStringList QTermWidget::availableColorSchemes()
     return ret;
 }
 
-void QTermWidget::setSize(int h, int v)
+void QTermWidget::addCustomColorSchemeDir(const QString& custom_dir)
+{
+    ColorSchemeManager::instance()->addCustomColorSchemeDir(custom_dir);
+}
+
+void QTermWidget::setSize(const QSize &size)
 {
     if (!m_impl->m_terminalDisplay)
         return;
-    m_impl->m_terminalDisplay->setSize(h, v);
+    m_impl->m_terminalDisplay->setSize(size.width(), size.height());
 }
 
 void QTermWidget::setHistorySize(int lines)
@@ -432,7 +489,7 @@ void QTermWidget::setScrollBarPosition(ScrollBarPosition pos)
 {
     if (!m_impl->m_terminalDisplay)
         return;
-    m_impl->m_terminalDisplay->setScrollBarPosition((TerminalDisplay::ScrollBarPosition)pos);
+    m_impl->m_terminalDisplay->setScrollBarPosition(pos);
 }
 
 void QTermWidget::scrollToEnd()
@@ -459,7 +516,6 @@ void QTermWidget::sessionFinished()
     emit finished();
 }
 
-
 void QTermWidget::copyClipboard()
 {
     m_impl->m_terminalDisplay->copyClipboard();
@@ -479,9 +535,9 @@ void QTermWidget::setZoom(int step)
 {
     if (!m_impl->m_terminalDisplay)
         return;
-    
+
     QFont font = m_impl->m_terminalDisplay->getVTFont();
-    
+
     font.setPointSize(font.pointSize() + step);
     setTerminalFont(font);
 }
@@ -561,6 +617,11 @@ int QTermWidget::screenColumnsCount()
     return m_impl->m_terminalDisplay->screenWindow()->screen()->getColumns();
 }
 
+int QTermWidget::screenLinesCount()
+{
+    return m_impl->m_terminalDisplay->screenWindow()->screen()->getLines();
+}
+
 void QTermWidget::setSelectionStart(int row, int column)
 {
     m_impl->m_terminalDisplay->screenWindow()->screen()->setSelectionStart(column, row, true);
@@ -576,12 +637,82 @@ void QTermWidget::getSelectionStart(int& row, int& column)
     m_impl->m_terminalDisplay->screenWindow()->screen()->getSelectionStart(column, row);
 }
 
-void QTermWidget::setSelectionEnd(int& row, int& column)
+void QTermWidget::getSelectionEnd(int& row, int& column)
 {
-    m_impl->m_terminalDisplay->screenWindow()->screen()->setSelectionEnd(column, row);
+    m_impl->m_terminalDisplay->screenWindow()->screen()->getSelectionEnd(column, row);
 }
 
 QString QTermWidget::selectedText(bool preserveLineBreaks)
 {
     return m_impl->m_terminalDisplay->screenWindow()->screen()->selectedText(preserveLineBreaks);
+}
+
+void QTermWidget::setMonitorActivity(bool monitor)
+{
+    m_impl->m_session->setMonitorActivity(monitor);
+}
+
+void QTermWidget::setMonitorSilence(bool monitor)
+{
+    m_impl->m_session->setMonitorSilence(monitor);
+}
+
+void QTermWidget::setSilenceTimeout(int seconds)
+{
+    m_impl->m_session->setMonitorSilenceSeconds(seconds);
+}
+
+Filter::HotSpot* QTermWidget::getHotSpotAt(const QPoint &pos) const
+{
+    int row = 0, column = 0;
+    m_impl->m_terminalDisplay->getCharacterPosition(pos, row, column);
+    return getHotSpotAt(row, column);
+}
+
+Filter::HotSpot* QTermWidget::getHotSpotAt(int row, int column) const
+{
+    return m_impl->m_terminalDisplay->filterChain()->hotSpotAt(row, column);
+}
+
+QList<QAction*> QTermWidget::filterActions(const QPoint& position)
+{
+    return m_impl->m_terminalDisplay->filterActions(position);
+}
+
+int QTermWidget::getPtySlaveFd() const
+{
+    return m_impl->m_session->getPtySlaveFd();
+}
+
+void QTermWidget::setKeyboardCursorShape(KeyboardCursorShape shape)
+{
+    if (!m_impl->m_terminalDisplay)
+        return;
+    m_impl->m_terminalDisplay->setKeyboardCursorShape(shape);
+}
+
+QString QTermWidget::title() const
+{
+    QString title = m_impl->m_session->userTitle();
+    if (title.isEmpty())
+        title = m_impl->m_session->title(Konsole::Session::NameRole);
+    return title;
+}
+
+QString QTermWidget::icon() const
+{
+    QString icon = m_impl->m_session->iconText();
+    if (icon.isEmpty())
+        icon = m_impl->m_session->iconName();
+    return icon;
+}
+
+bool QTermWidget::isTitleChanged() const
+{
+    return m_impl->m_session->isTitleChanged();
+}
+
+void QTermWidget::setAutoClose(bool autoClose)
+{
+    m_impl->m_session->setAutoClose(autoClose);
 }

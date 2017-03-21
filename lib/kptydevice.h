@@ -278,7 +278,7 @@ public:
     {
         int index = 0;
         int start = head;
-        QLinkedList<QByteArray>::ConstIterator it = buffers.constBegin();
+        QLinkedList<QByteArray>::ConstIterator it = buffers.begin();
         forever {
             if (!maxLength)
                 return index;

@@ -26,7 +26,6 @@
 // Qt
 #include <QAction>
 #include <QApplication>
-#include <QtAlgorithms>
 #include <QClipboard>
 #include <QString>
 #include <QTextStream>
@@ -195,7 +194,6 @@ Filter::~Filter()
 }
 void Filter::reset()
 {
-    qDeleteAll(_hotspotList);
     _hotspots.clear();
     _hotspotList.clear();
 }

@@ -246,27 +246,6 @@ void QTermWidget::init(int startnow)
     m_layout->setMargin(0);
     setLayout(m_layout);
 
-    // translations
-    // First check $XDG_DATA_DIRS. This follows the implementation in libqtxdg
-    QString d = QFile::decodeName(qgetenv("XDG_DATA_DIRS"));
-    QStringList dirs = d.split(QLatin1Char(':'), QString::SkipEmptyParts);
-    if (dirs.isEmpty()) {
-        dirs.append(QString::fromLatin1("/usr/local/share"));
-        dirs.append(QString::fromLatin1("/usr/share"));
-    }
-    dirs.append(QFile::decodeName(TRANSLATIONS_DIR));
-
-    m_translator = new QTranslator(this);
-
-    for (const QString& dir : dirs) {
-        qDebug() << "Trying to load translation file from dir" << dir;
-        if (m_translator->load(QLocale::system(), "qtermwidget", "_", dir)) {
-            qApp->installTranslator(m_translator);
-            qDebug() << "Translations found in" << dir;
-            break;
-        }
-    }
-
     m_impl = new TermWidgetImpl(this);
     m_impl->m_terminalDisplay->setSizePolicy(QSizePolicy::MinimumExpanding, QSizePolicy::MinimumExpanding);
     m_layout->addWidget(m_impl->m_terminalDisplay);
@@ -276,8 +255,6 @@ void QTermWidget::init(int startnow)
 
     connect(m_impl->m_session, SIGNAL(activity()), this, SIGNAL(activity()));
     connect(m_impl->m_session, SIGNAL(silence()), this, SIGNAL(silence()));
-
-    connect(m_impl->m_session, &Session::receivedData, this, &QTermWidget::receivedData);
 
     // That's OK, FilterChain's dtor takes care of UrlFilter.
     UrlFilter *urlFilter = new UrlFilter();
@@ -710,9 +687,4 @@ QString QTermWidget::icon() const
 bool QTermWidget::isTitleChanged() const
 {
     return m_impl->m_session->isTitleChanged();
-}
-
-void QTermWidget::setAutoClose(bool autoClose)
-{
-    m_impl->m_session->setAutoClose(autoClose);
 }

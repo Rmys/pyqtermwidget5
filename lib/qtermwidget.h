@@ -20,17 +20,15 @@
 #ifndef _Q_TERM_WIDGET
 #define _Q_TERM_WIDGET
 
-#include <QTranslator>
 #include <QWidget>
 #include "Filter.h"
-#include "qtermwidget_export.h"
 
 class QVBoxLayout;
 struct TermWidgetImpl;
 class SearchBar;
 class QUrl;
 
-class QTERMWIDGET_EXPORT QTermWidget : public QWidget {
+class QTermWidget : public QWidget {
     Q_OBJECT
 public:
 
@@ -213,13 +211,6 @@ public:
      */
     void setKeyboardCursorShape(KeyboardCursorShape shape);
 
-
-    /**
-     * Automatically close the terminal session after the shell process exits or
-     * keep it running.
-     */
-    void setAutoClose(bool);
-
     QString title() const;
     QString icon() const;
 
@@ -250,12 +241,6 @@ signals:
     void sendData(const char *,int);
 
     void titleChanged();
-
-    /**
-     * Signals that we received new data from the process running in the
-     * terminal emulator
-     */
-    void receivedData(const QString &text);
 
 public slots:
     // Copy selection to clipboard
@@ -305,7 +290,6 @@ private:
     TermWidgetImpl * m_impl;
     SearchBar* m_searchBar;
     QVBoxLayout *m_layout;
-    QTranslator *m_translator;
 };
 
 

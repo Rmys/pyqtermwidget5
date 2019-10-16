@@ -188,9 +188,15 @@ public:
     TripleClickMode tripleClickMode() { return _tripleClickMode; }
 
     void setLineSpacing(uint);
+    void setMargin(int);
+
+    int margin() const;
     uint lineSpacing() const;
 
     void emitSelection(bool useXselection,bool appendReturn);
+
+    /** change and wrap text corresponding to paste mode **/
+    void bracketText(QString& text);
 
     /**
      * Sets the shape of the keyboard cursor.  This is the cursor drawn
@@ -630,7 +636,7 @@ private:
     // draws a section of text, all the text in this section
     // has a common color and style
     void drawTextFragment(QPainter& painter, const QRect& rect,
-                          const QString& text, const Character* style);
+                          const std::wstring& text, const Character* style);
     // draws the background for a text fragment
     // if useOpacitySetting is true then the color's alpha value will be set to
     // the display's transparency (set with setOpacity()), otherwise the background
@@ -641,11 +647,11 @@ private:
     void drawCursor(QPainter& painter, const QRect& rect , const QColor& foregroundColor,
                                        const QColor& backgroundColor , bool& invertColors);
     // draws the characters or line graphics in a text fragment
-    void drawCharacters(QPainter& painter, const QRect& rect,  const QString& text,
+    void drawCharacters(QPainter& painter, const QRect& rect,  const std::wstring& text,
                                            const Character* style, bool invertCharacterColor);
     // draws a string of line graphics
     void drawLineCharString(QPainter& painter, int x, int y,
-                            const QString& str, const Character* attributes);
+                            const std::wstring& str, const Character* attributes);
 
     // draws the preedit string for input methods
     void drawInputMethodPreeditString(QPainter& painter , const QRect& rect);
@@ -677,6 +683,8 @@ private:
 
     void paintFilters(QPainter& painter);
 
+    void calDrawTextAdditionHeight(QPainter& painter);
+
     // returns a region covering all of the areas of the widget which contain
     // a hotspot
     QRegion hotSpotRegion() const;
@@ -702,6 +710,8 @@ private:
     int  _fontWidth;     // width
     int  _fontAscent;     // ascend
     bool _boldIntense;   // Whether intense colors should be rendered with bold font
+    int  _drawTextAdditionHeight;   // additional height to prevent font trancation
+    bool _drawTextTestFlag;         // indicate it is a testing or not
 
     int _leftMargin;    // offset
     int _topMargin;    // offset
@@ -804,7 +814,7 @@ private:
 
     struct InputMethodData
     {
-        QString preeditString;
+        std::wstring preeditString;
         QRect previousPreeditRect;
     };
     InputMethodData _inputMethodData;
@@ -813,8 +823,9 @@ private:
 
     //the delay in milliseconds between redrawing blinking text
     static const int TEXT_BLINK_DELAY = 500;
-    static const int DEFAULT_LEFT_MARGIN = 1;
-    static const int DEFAULT_TOP_MARGIN = 1;
+
+    int _leftBaseMargin;
+    int _topBaseMargin;
 
 public:
     static void setTransparencyEnabled(bool enable)

@@ -20,15 +20,18 @@
 #ifndef _Q_TERM_WIDGET
 #define _Q_TERM_WIDGET
 
+#include <QTranslator>
 #include <QWidget>
+#include "Emulation.h"
 #include "Filter.h"
+#include "qtermwidget_export.h"
 
 class QVBoxLayout;
 struct TermWidgetImpl;
 class SearchBar;
 class QUrl;
 
-class QTermWidget : public QWidget {
+class QTERMWIDGET_EXPORT QTermWidget : public QWidget {
     Q_OBJECT
 public:
 
@@ -44,24 +47,7 @@ public:
         ScrollBarRight = 2
     };
 
-    /**
-     * This enum describes the available shapes for the keyboard cursor.
-     * See setKeyboardCursorShape()
-     */
-    enum KeyboardCursorShape {
-        /** A rectangular block which covers the entire area of the cursor character. */
-        BlockCursor = 0,
-        /**
-         * A single flat line which occupies the space at the bottom of the cursor
-         * character's area.
-         */
-        UnderlineCursor = 1,
-        /**
-         * An cursor shaped like the capital letter 'I', similar to the IBeam
-         * cursor used in Qt/KDE text editors.
-         */
-        IBeamCursor = 2
-    };
+    using KeyboardCursorShape = Konsole::Emulation::KeyboardCursorShape;
 
     //Creation of widget
     QTermWidget(int startnow, // 1 = start shell programm immediatelly
@@ -73,6 +59,10 @@ public:
 
     //Initial size
     QSize sizeHint() const;
+
+    // expose TerminalDisplay::TerminalSizeHint, setTerminalSizeHint
+    void setTerminalSizeHint(bool on);
+    bool terminalSizeHint();
 
     //start shell program if it was not started in constructor
     void startShellProgram();
@@ -211,12 +201,32 @@ public:
      */
     void setKeyboardCursorShape(KeyboardCursorShape shape);
 
+    void setBlinkingCursor(bool blink);
+
+    /** Enables or disables bidi text in the terminal. */
+    void setBidiEnabled(bool enabled);
+    bool isBidiEnabled();
+
+    /**
+     * Automatically close the terminal session after the shell process exits or
+     * keep it running.
+     */
+    void setAutoClose(bool);
+
     QString title() const;
     QString icon() const;
 
     /** True if the title() or icon() was (ever) changed by the session. */
     bool isTitleChanged() const;
 
+    /** change and wrap text corresponding to paste mode **/
+    void bracketText(QString& text);
+
+    /** Set the empty space outside the terminal */
+    void setMargin(int);
+
+    /** Get the empty space outside the terminal */
+    int getMargin() const;
 signals:
     void finished();
     void copyAvailable(bool);
@@ -240,7 +250,15 @@ signals:
      */
     void sendData(const char *,int);
 
+    void profileChanged(const QString & profile);
+
     void titleChanged();
+
+    /**
+     * Signals that we received new data from the process running in the
+     * terminal emulator
+     */
+    void receivedData(const QString &text);
 
 public slots:
     // Copy selection to clipboard
@@ -282,6 +300,11 @@ private slots:
     void findPrevious();
     void matchFound(int startColumn, int startLine, int endColumn, int endLine);
     void noMatchFound();
+    /**
+     * Emulation::cursorChanged() signal propogates to here and QTermWidget
+     * sends the specified cursor states to the terminal display
+     */
+    void cursorChanged(Konsole::Emulation::KeyboardCursorShape cursorShape, bool blinkingCursorEnabled);
 
 private:
     void search(bool forwards, bool next);
@@ -290,6 +313,7 @@ private:
     TermWidgetImpl * m_impl;
     SearchBar* m_searchBar;
     QVBoxLayout *m_layout;
+    QTranslator *m_translator;
 };
 
 

@@ -26,6 +26,7 @@
 // Qt
 #include <QAction>
 #include <QApplication>
+#include <QtAlgorithms>
 #include <QClipboard>
 #include <QString>
 #include <QTextStream>
@@ -173,7 +174,7 @@ void TerminalImageFilterChain::setImage(const Character* const image , int lines
         // terminal image to avoid adding this imaginary character for wrapped
         // lines
         if ( !(lineProperties.value(i,LINE_DEFAULT) & LINE_WRAPPED) )
-            lineStream << QChar('\n');
+            lineStream << QLatin1Char('\n');
     }
     decoder.end();
 }
@@ -186,14 +187,12 @@ _buffer(0)
 
 Filter::~Filter()
 {
-    QListIterator<HotSpot*> iter(_hotspotList);
-    while (iter.hasNext())
-    {
-        delete iter.next();
-    }
+    qDeleteAll(_hotspotList);
+    _hotspotList.clear();
 }
 void Filter::reset()
 {
+    qDeleteAll(_hotspotList);
     _hotspots.clear();
     _hotspotList.clear();
 }
@@ -222,7 +221,7 @@ void Filter::getLineColumn(int position , int& startLine , int& startColumn)
         if ( _linePositions->value(i) <= position && position < nextLine )
         {
             startLine = i;
-            startColumn = string_width(buffer()->mid(_linePositions->value(i),position - _linePositions->value(i)));
+            startColumn = string_width(buffer()->mid(_linePositions->value(i),position - _linePositions->value(i)).toStdWString());
             return;
         }
     }
@@ -360,7 +359,7 @@ void RegExpFilter::process()
 
     // ignore any regular expressions which match an empty string.
     // otherwise the while loop below will run indefinitely
-    static const QString emptyString("");
+    static const QString emptyString;
     if ( _searchText.exactMatch(emptyString) )
         return;
 
@@ -416,7 +415,7 @@ UrlFilter::HotSpot::HotSpot(int startLine,int startColumn,int endLine,int endCol
 
 UrlFilter::HotSpot::UrlType UrlFilter::HotSpot::urlType() const
 {
-    QString url = capturedTexts().first();
+    QString url = capturedTexts().constFirst();
 
     if ( FullUrlRegExp.exactMatch(url) )
         return StandardUrl;
@@ -428,33 +427,33 @@ UrlFilter::HotSpot::UrlType UrlFilter::HotSpot::urlType() const
 
 void UrlFilter::HotSpot::activate(const QString& actionName)
 {
-    QString url = capturedTexts().first();
+    QString url = capturedTexts().constFirst();
 
     const UrlType kind = urlType();
 
-    if ( actionName == "copy-action" )
+    if ( actionName == QLatin1String("copy-action") )
     {
         QApplication::clipboard()->setText(url);
         return;
     }
 
-    if ( actionName.isEmpty() || actionName == "open-action" || actionName == "click-action" )
+    if ( actionName.isEmpty() || actionName == QLatin1String("open-action") || actionName == QLatin1String("click-action") )
     {
         if ( kind == StandardUrl )
         {
             // if the URL path does not include the protocol ( eg. "www.kde.org" ) then
             // prepend http:// ( eg. "www.kde.org" --> "http://www.kde.org" )
-            if (!url.contains("://"))
+            if (!url.contains(QLatin1String("://")))
             {
-                url.prepend("http://");
+                url.prepend(QLatin1String("http://"));
             }
         }
         else if ( kind == Email )
         {
-            url.prepend("mailto:");
+            url.prepend(QLatin1String("mailto:"));
         }
 
-        _urlObject->emitActivated(url, actionName != "click-action");
+        _urlObject->emitActivated(QUrl(url, QUrl::StrictMode), actionName != QLatin1String("click-action"));
     }
 }
 
@@ -466,14 +465,14 @@ void UrlFilter::HotSpot::activate(const QString& actionName)
 //regexp matches:
 // full url:
 // protocolname:// or www. followed by anything other than whitespaces, <, >, ' or ", and ends before whitespaces, <, >, ', ", ], !, comma and dot
-const QRegExp UrlFilter::FullUrlRegExp("(www\\.(?!\\.)|[a-z][a-z0-9+.-]*://)[^\\s<>'\"]+[^!,\\.\\s<>'\"\\]]");
+const QRegExp UrlFilter::FullUrlRegExp(QLatin1String("(www\\.(?!\\.)|[a-z][a-z0-9+.-]*://)[^\\s<>'\"]+[^!,\\.\\s<>'\"\\]]"));
 // email address:
 // [word chars, dots or dashes]@[word chars, dots or dashes].[word chars]
-const QRegExp UrlFilter::EmailAddressRegExp("\\b(\\w|\\.|-)+@(\\w|\\.|-)+\\.\\w+\\b");
+const QRegExp UrlFilter::EmailAddressRegExp(QLatin1String("\\b(\\w|\\.|-)+@(\\w|\\.|-)+\\.\\w+\\b"));
 
 // matches full url or email address
-const QRegExp UrlFilter::CompleteUrlRegExp('('+FullUrlRegExp.pattern()+'|'+
-                                            EmailAddressRegExp.pattern()+')');
+const QRegExp UrlFilter::CompleteUrlRegExp(QLatin1Char('(')+FullUrlRegExp.pattern()+QLatin1Char('|')+
+                                            EmailAddressRegExp.pattern()+QLatin1Char(')'));
 
 UrlFilter::UrlFilter()
 {

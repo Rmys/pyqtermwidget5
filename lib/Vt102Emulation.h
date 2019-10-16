@@ -102,7 +102,7 @@ protected:
   // reimplemented from Emulation
   virtual void setMode(int mode);
   virtual void resetMode(int mode);
-  virtual void receiveChar(int cc);
+  virtual void receiveChar(wchar_t cc);
 
 private slots:
   //causes changeTitle() to be emitted for each (int,QString) pair in pendingTitleUpdates
@@ -110,7 +110,7 @@ private slots:
   void updateTitle();
 
 private:
-  unsigned short applyCharset(unsigned short c);
+  wchar_t applyCharset(wchar_t c);
   void setCharset(int n, int cs);
   void useCharset(int n);
   void setAndUseCharset(int n, int cs);
@@ -133,9 +133,9 @@ private:
   void resetModes();
 
   void resetTokenizer();
-  #define MAX_TOKEN_LENGTH 80
-  void addToCurrentToken(int cc);
-  int tokenBuffer[MAX_TOKEN_LENGTH]; //FIXME: overflow?
+  #define MAX_TOKEN_LENGTH 256 // Max length of tokens (e.g. window title)
+  void addToCurrentToken(wchar_t cc);
+  wchar_t tokenBuffer[MAX_TOKEN_LENGTH]; //FIXME: overflow?
   int tokenBufferPos;
 #define MAXARGS 15
   void addDigit(int dig);
@@ -143,6 +143,7 @@ private:
   int argv[MAXARGS];
   int argc;
   void initTokenizer();
+  int prevCC;
 
   // Set of flags for each of the ASCII characters which indicates
   // what category they fall into (printable character, control, digit etc.)
@@ -151,8 +152,9 @@ private:
 
   void reportDecodingError();
 
-  void processToken(int code, int p, int q);
+  void processToken(int code, wchar_t p, int q);
   void processWindowAttributeChange();
+  void requestWindowAttribute(int);
 
   void reportTerminalType();
   void reportSecondaryAttributes();

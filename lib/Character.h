@@ -48,6 +48,10 @@ static const int LINE_DOUBLEHEIGHT    = (1 << 2);
 #define RE_ITALIC          (1 << 4)
 #define RE_CURSOR          (1 << 5)
 #define RE_EXTENDED_CHAR   (1 << 6)
+#define RE_FAINT           (1 << 7)
+#define RE_STRIKEOUT       (1 << 8)
+#define RE_CONCEAL         (1 << 9)
+#define RE_OVERLINE        (1 << 10)
 
 /**
  * A single character in the terminal which consists of a unicode character
@@ -74,7 +78,7 @@ public:
   union
   {
     /** The unicode character value for this character. */
-    quint16 character;
+    wchar_t character;
     /**
      * Experimental addition which allows a single Character instance to contain more than
      * one unicode character.

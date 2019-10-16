@@ -198,6 +198,11 @@ public:
      */
     void insertChars(int n);
     /**
+     * Repeat the preceeding graphic character @count times, including SPACE.
+     * If @count is 0 then the character is repeated once.
+     */
+    void repeatChars(int count);
+    /**
      * Removes @p n lines beginning from the current cursor position.
      * The position of the cursor is not altered.
      * If @p n is 0 then one line is removed.
@@ -341,7 +346,7 @@ public:
      * is inserted at the current cursor position, otherwise it will replace the
      * character already at the current cursor position.
      */
-    void displayCharacter(unsigned short c);
+    void displayCharacter(wchar_t c);
 
     // Do composition with last shown character FIXME: Not implemented yet for KDE 4
     void compose(const QString& compose);
@@ -666,6 +671,9 @@ private:
 
     // last position where we added a character
     int lastPos;
+
+    // used in REP (repeating char)
+    unsigned short lastDrawnChar;
 
     static Character defaultChar;
 };
